@@ -14,6 +14,7 @@
 #include <vector>
 #include <map>
 #include <cmath>
+#include <test_image.h>
 
 std::string to_string(std::string_view str)
 {
@@ -37,13 +38,16 @@ uniform mat4 view;
 uniform mat4 projection;
 
 layout (location = 0) in vec3 in_position;
+layout (location = 1) in vec2 incoord;
 
 out vec4 color;
+out vec2 texcoord;
 
 void main()
 {
 	gl_Position = projection * view * vec4(in_position, 1.0);
 	color = vec4(1.0, 0.0, 1.0, 1.0);
+	texcoord = incoord;
 }
 )";
 
@@ -51,12 +55,16 @@ const char fragment_shader_source[] =
 R"(#version 330 core
 
 in vec4 color;
+in vec2 texcoord;
 
 layout (location = 0) out vec4 out_color;
 
+uniform sampler2D my_texture;
+uniform sampler2D my_texture2;
+
 void main()
 {
-	out_color = color;
+	out_color = mix(texture(my_texture, texcoord), texture(my_texture2, texcoord), 0.5);
 }
 )";
 
@@ -109,14 +117,15 @@ struct vec3
 struct vertex
 {
 	vec3 position;
+	float texcoords[2];
 };
 
 static vertex plane_vertices[]
 {
-	{{-10.f, 0.f, -10.f}},
-	{{-10.f, 0.f,  10.f}},
-	{{ 10.f, 0.f, -10.f}},
-	{{ 10.f, 0.f,  10.f}},
+	{{-10.f, 0.f, -10.f}, {0.f, 0.f}},
+	{{-10.f, 0.f,  10.f}, {0.f, 1.f}},
+	{{ 10.f, 0.f, -10.f}, {1.f, 0.f}},
+	{{ 10.f, 0.f,  10.f}, {1.f, 1.f}},
 };
 
 static std::uint32_t plane_indices[]
@@ -170,6 +179,8 @@ int main() try
 
 	GLuint view_location = glGetUniformLocation(program, "view");
 	GLuint projection_location = glGetUniformLocation(program, "projection");
+	GLuint texture_location = glGetUniformLocation(program, "my_texture");
+	GLuint texture_location2 = glGetUniformLocation(program, "my_texture2");
 
 	GLuint vao, vbo, ebo;
 	glGenVertexArrays(1, &vao);
@@ -185,6 +196,65 @@ int main() try
 
 	glEnableVertexAttribArray(0);
 	glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)(0));
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*)(12));
+
+	GLuint texture;
+	glGenTextures(1, &texture);
+
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+	int c_width = 1024;
+	int c_height = 1024;
+
+	std::vector<uint32_t> data(c_width * c_height);
+
+	for (int x = 0; x < c_width; x++)
+	{
+		for (int y = 0; y < c_height; y++)
+		{
+			if ((x + y) % 2 == 0) 
+			{
+				data[x*c_height + y] = 0xffffffff;
+			}
+			else
+			{
+				data[x*c_height + y] = 0;
+			}
+		}
+	}
+
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, c_width, c_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data()); 
+	glUniform1i(texture_location, 0);
+	glActiveTexture(GL_TEXTURE0);
+	glBindTexture(GL_TEXTURE_2D, texture);
+	glGenerateMipmap(GL_TEXTURE_2D);
+
+
+	std::vector<uint32_t> data_1(c_width * c_height / 4, 0x00FF00FF);
+	glTexImage2D(GL_TEXTURE_2D, 1, GL_RGBA8, c_width / 2, c_height / 2, 0, GL_RGBA, GL_UNSIGNED_BYTE, data_1.data()); 
+	std::vector<uint32_t> data_2(c_width * c_height / 16, 0x0000FFFF);
+	glTexImage2D(GL_TEXTURE_2D, 2, GL_RGBA8, c_width /4, c_height / 4, 0, GL_RGBA, GL_UNSIGNED_BYTE, data_2.data()); 
+	std::vector<uint32_t> data_3(c_width * c_height / 64, 0xFF0000FF);
+	glTexImage2D(GL_TEXTURE_2D, 3, GL_RGBA8, c_width /8, c_height/8, 0, GL_RGBA, GL_UNSIGNED_BYTE, data_3.data()); 
+	
+	
+	GLuint texture2;
+	glGenTextures(1, &texture2);
+
+	glBindTexture(GL_TEXTURE_2D, texture2);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	
+	// glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, c_width, c_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, data.data()); 
+	glUniform1i(texture_location, 1);
+	glActiveTexture(GL_TEXTURE1);
+	glBindTexture(GL_TEXTURE_2D, texture2);
+	glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, test_image_width, test_image_height, 0, GL_RGB, GL_UNSIGNED_BYTE, test_image); 
+	glGenerateMipmap(GL_TEXTURE_2D);
 
 	auto last_frame_start = std::chrono::high_resolution_clock::now();
 
@@ -227,6 +297,15 @@ int main() try
 
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 		glEnable(GL_DEPTH_TEST);
+		glUniform1i(texture_location, 0);
+		glUniform1i(texture_location, 1);
+
+		glActiveTexture(GL_TEXTURE1);
+		glBindTexture(GL_TEXTURE_2D, texture2);
+
+		glActiveTexture(GL_TEXTURE0);
+		glBindTexture(GL_TEXTURE_2D, texture);
+	
 
 		float near = 0.1f;
 		float far = 100.f;

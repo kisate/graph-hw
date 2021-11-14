@@ -126,6 +126,28 @@ vec2 bezier(std::vector<vertex> const & vertices, float t)
 	return points[0];
 }
 
+void gen_bezier(std::vector<vertex> const & vertices, std::vector<vertex> & dest, int quality) {
+	dest.clear();
+	for (int i = 0; i <= vertices.size()*quality; ++i)
+	{
+		vec2 point = bezier(vertices, (float) i / vertices.size() / quality);
+		dest.push_back({
+			point, {0,0,255,255}
+		});
+	}
+}
+
+void update(std::vector<vertex> & vertices, std::vector<vertex> & vertices2, GLuint& vbo, GLuint& vao, GLuint& vbo2, GLuint vao2, int quality) {
+	gen_bezier(vertices, vertices2, quality);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	glBindVertexArray(vao);
+	glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(vertices[0]), vertices.data(), GL_STATIC_DRAW);
+
+	glBindBuffer(GL_ARRAY_BUFFER, vbo2);
+	glBindVertexArray(vao2);
+	glBufferData(GL_ARRAY_BUFFER, vertices2.size() * sizeof(vertices[0]), vertices2.data(), GL_STATIC_DRAW);
+}
+
 int main() try
 {
 	if (SDL_Init(SDL_INIT_VIDEO) != 0)
@@ -142,7 +164,7 @@ int main() try
 		SDL_WINDOWPOS_CENTERED,
 		SDL_WINDOWPOS_CENTERED,
 		800, 600,
-		SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_MAXIMIZED);
+		SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
 	if (!window)
 		sdl2_fail("SDL_CreateWindow: ");
@@ -170,11 +192,46 @@ int main() try
 
 	GLuint view_location = glGetUniformLocation(program, "view");
 
+	std::vector<vertex> vertices = {
+	};
+
+	std::vector<vertex> vertices2;
+	
+	GLuint vbo;
+	glGenBuffers(1, &vbo); 
+	glBindBuffer(GL_ARRAY_BUFFER, vbo);
+	
+	GLuint vao;
+	glGenVertexArrays(1, &vao);
+	glBindVertexArray(vao);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*) 0);
+
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(vertex), (void*) 8);
+
+	GLuint vbo2;
+	glGenBuffers(1, &vbo2);
+	glBindBuffer(GL_ARRAY_BUFFER, vbo2);
+	
+	GLuint vao2;
+	glGenVertexArrays(1, &vao2);
+	glBindVertexArray(vao2);
+
+	glEnableVertexAttribArray(0);
+	glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, sizeof(vertex), (void*) 0);
+
+	glEnableVertexAttribArray(1);
+	glVertexAttribPointer(1, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(vertex), (void*) 8);
+
 	auto last_frame_start = std::chrono::high_resolution_clock::now();
 
 	float time = 0.f;
 
 	bool running = true;
+	bool first = false;
+	int quality = 4;
 	while (running)
 	{
 		for (SDL_Event event; SDL_PollEvent(&event);) switch (event.type)
@@ -196,20 +253,33 @@ int main() try
 			{
 				int mouse_x = event.button.x;
 				int mouse_y = event.button.y;
+				vertices.push_back(
+					{{ (float) mouse_x, height - (float) mouse_y}, {255, 0, 0, 255}}
+				);
+				update(vertices, vertices2, vbo, vao, vbo2, vao2, quality);
 			}
 			else if (event.button.button == SDL_BUTTON_RIGHT)
 			{
-
+				if (vertices.size() > 0)
+				{
+					vertices.pop_back();
+					update(vertices, vertices2, vbo, vao, vbo2, vao2, quality);
+				}
 			}
 			break;
 		case SDL_KEYDOWN:
 			if (event.key.keysym.sym == SDLK_LEFT)
 			{
-
+				if (quality > 1)
+				{
+					quality --;
+					update(vertices, vertices2, vbo, vao, vbo2, vao2, quality);
+				}
 			}
 			else if (event.key.keysym.sym == SDLK_RIGHT)
 			{
-
+				quality ++;
+				update(vertices, vertices2, vbo, vao, vbo2, vao2, quality);
 			}
 			break;
 		}
@@ -223,11 +293,19 @@ int main() try
 		time += dt;
 
 		glClear(GL_COLOR_BUFFER_BIT);
+		glBindBuffer(GL_ARRAY_BUFFER, vbo2);
+		glBindVertexArray(vao2);
+		glDrawArrays(GL_LINE_STRIP, 0, vertices2.size());
+		glBindBuffer(GL_ARRAY_BUFFER, vbo);
+		glBindVertexArray(vao);
+		glDrawArrays(GL_LINE_STRIP, 0, vertices.size());
+		glPointSize(10);
+		glDrawArrays(GL_POINTS, 0, vertices.size());
 
 		float view[16] =
 		{
-			1.f, 0.f, 0.f, 0.f,
-			0.f, 1.f, 0.f, 0.f,
+			2.f / width, 0.f, 0.f, -1.f,
+			0.f, 2.f / height, 0.f, -1.f,
 			0.f, 0.f, 1.f, 0.f,
 			0.f, 0.f, 0.f, 1.f,
 		};
@@ -237,6 +315,8 @@ int main() try
 
 		SDL_GL_SwapWindow(window);
 	}
+
+	
 
 	SDL_GL_DeleteContext(gl_context);
 	SDL_DestroyWindow(window);
