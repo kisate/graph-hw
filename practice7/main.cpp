@@ -260,7 +260,7 @@ int main() try
 	std::vector<std::uint32_t> indices;
 
 	{
-		std::ifstream dragon_file(PRACTICE_SOURCE_DIRECTORY "/dragon.raw");
+		std::ifstream dragon_file(PRACTICE_SOURCE_DIRECTORY "/dragon.raw", std::ios::binary);
 
 		std::uint32_t vertex_count;
 		std::uint32_t index_count;
@@ -337,7 +337,7 @@ int main() try
 	float view_angle = 0.f;
 	float camera_distance = 0.5f;
 	float model_angle = glm::pi<float>() / 2.f;
-	float model_scale = 4.f;
+	float model_scale = 1.f;
 
 	bool running = true;
 	while (running)
